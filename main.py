@@ -21,7 +21,7 @@ SUPERFEEDR_PASSWORD = ""
 def superfeedr(mode, subscription):
   post_data = {
       'hub.mode' : mode,
-      'hub.callback' : "http://notifixlite.appspot.com/hubbub/" + subscription.key().name(),
+      'hub.callback' : "http://notizer.appspot.com/hubbub/" + subscription.key().name(),
       'hub.topic' : subscription.feed, 
       'hub.verify' : 'async',
       'hub.verify_token' : '',
