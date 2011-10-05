@@ -4,6 +4,8 @@ import base64
 import urllib
 import logging
 import feedparser
+import distribute
+import settings
 from google.appengine.api import xmpp
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp.util import run_wsgi_app
@@ -12,9 +14,7 @@ from google.appengine.ext.webapp import template
 from google.appengine.ext import db
 from google.appengine.api import urlfetch
 
-
-SUPERFEEDR_LOGIN = ""
-SUPERFEEDR_PASSWORD = ""
+couch_client = distribute.CouchClient()
 
 ##
 # the function that sends subscriptions/unsubscriptions to Superfeedr
@@ -26,7 +26,7 @@ def superfeedr(mode, subscription):
       'hub.verify' : 'async',
       'hub.verify_token' : '',
   }
-  base64string = base64.encodestring('%s:%s' % (SUPERFEEDR_LOGIN, SUPERFEEDR_PASSWORD))[:-1]
+  base64string = base64.encodestring('%s:%s' % (settings.SUPERFEEDR_LOGIN, settings.SUPERFEEDR_PASSWORD))[:-1]
   form_data = urllib.urlencode(post_data)
   result = urlfetch.fetch(url="http://superfeedr.com/hubbub",
                   payload=form_data,
@@ -56,6 +56,16 @@ class MainPage(webapp.RequestHandler):
   def get(self):
     self.Render("index.html")
 
+class TestPage(webapp.RequestHandler):
+  
+  def get(self):
+    couch = distribute.CouchClient()
+    test_doc = {
+        'foo': 'bla',
+        'type': 'test'
+    }
+    couch.save(test_doc)
+    self.response.out.write('test')
 ##
 # The HubbubSusbcriber
 class HubbubSubscriber(webapp.RequestHandler):
@@ -65,45 +75,46 @@ class HubbubSubscriber(webapp.RequestHandler):
   def post(self, feed_sekret):
     subscription = Subscription.get_by_key_name(feed_sekret)
     if(subscription == None):
-      self.response.set_status(404)
-      self.response.out.write("Sorry, no feed."); 
-      
-    else:
-      body = self.request.body.decode('utf-8')
-      data = feedparser.parse(self.request.body)
-      logging.info('Found %d entries in %s', len(data.entries), subscription.feed)
-      feed_title = data.feed.title 
-      for entry in data.entries:
-        link = entry.get('link', '')
-        title = entry.get('title', '')
-        logging.info('Found entry with title = "%s", '
-                   'link = "%s"',
-                   title, link)
-        user_address = subscription.jid
-        msg = "'" + feed_title + "' : " + title + "\n" + link
-        status_code = xmpp.send_message(user_address, msg)
+        self.response.set_status(404)
+        self.response.out.write("Sorry, no feed.");       
+    else:        
+        body = self.request.body.decode('utf-8')
+        data = feedparser.parse(self.request.body)
+        logging.info('Found %d entries in %s', len(data.entries), subscription.feed)
+        feed_title = data.feed.title       
+        for entry in data.entries:
+            logging.info(entry)
+            couch_client.save_feedparser_dict(entry)
+            link = entry.get('link', '')
+            title = entry.get('title', '')
+            logging.info('Found entry with title = "%s", '
+                    'link = "%s"',
+                    title, link)
+            user_address = subscription.jid
+            msg = "'" + feed_title + "' : " + title + "\n" + link
+            status_code = xmpp.send_message(user_address, msg)
           
-      self.response.set_status(200)
-      self.response.out.write("Aight. Saved."); 
+        self.response.set_status(200)
+        self.response.out.write("Aight. Saved."); 
   
   def get(self, feed_sekret):
     subscription = Subscription.get_by_key_name(feed_sekret)
     if(subscription == None):
-      self.response.set_status(404)
-      self.response.out.write("Sorry, no feed."); 
+        self.response.set_status(404)
+        self.response.out.write("Sorry, no feed."); 
     else:
-      # Let's confirm to the subscriber that he'll get notifications for this feed.
-      user_address = subscription.jid
-      if(self.request.get("hub.mode") == "subscribe"):
-        msg =  "You're now subscribed to " + subscription.feed
-        xmpp.send_message(user_address, msg)
-        self.response.out.write(self.request.get('hub.challenge'))
-        self.response.set_status(200)
-      elif(self.request.get("hub.mode") == "unsubscribe"):
-        msg =  "You're not anybmore subscribed to " + subscription.feed
-        xmpp.send_message(user_address, msg)
-        self.response.out.write(self.request.get('hub.challenge'))
-        self.response.set_status(200)
+        # Let's confirm to the subscriber that he'll get notifications for this feed.
+        user_address = subscription.jid
+        if(self.request.get("hub.mode") == "subscribe"):
+            msg =  "You're now subscribed to " + subscription.feed
+            xmpp.send_message(user_address, msg)
+            self.response.out.write(self.request.get('hub.challenge'))
+            self.response.set_status(200)
+        elif(self.request.get("hub.mode") == "unsubscribe"):
+            msg =  "You're not anybmore subscribed to " + subscription.feed
+            xmpp.send_message(user_address, msg)
+            self.response.out.write(self.request.get('hub.challenge'))
+            self.response.set_status(200)
   
 ##
 # The XMPP App interface
@@ -201,7 +212,11 @@ class XMPPHandler(xmpp_handlers.CommandHandler):
     message = xmpp.Message(self.request.POST)
     message.reply("Echooooo (when you're done playing, type /help) > " + message.body)
 
-application = webapp.WSGIApplication([('/_ah/xmpp/message/chat/', XMPPHandler), ('/', MainPage), ('/hubbub/(.*)', HubbubSubscriber)],debug=True)
+application = webapp.WSGIApplication([
+    ('/_ah/xmpp/message/chat/', XMPPHandler), 
+    ('/', MainPage),
+    ('/test', TestPage),
+    ('/hubbub/(.*)', HubbubSubscriber)],debug=True)
 
 def main():
   run_wsgi_app(application)
