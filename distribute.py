@@ -17,10 +17,15 @@ class CouchClient(object):
     def save(self, doc):
         self.db.save(doc)
         
-    def save_feedparser_dict(self, entry):
+    def save_feedparser_dict(self, entry, feed):
         del entry["updated_parsed"]
         del entry["published_parsed"]
         entry["type"] = "newsitem"
-        self.save(entry)
-        #j = simplejson.dumps(entry, default=to_json)
-        #self.save(simplejson.loads(j))        
+        entry["feed_url"] = feed.get('id')
+        entry["feed"] = {
+            'title': feed.get('title'),
+            'link':  feed.get('link'),
+            'desc': feed.get('subtitle'),
+            
+        }
+        self.save(entry)       

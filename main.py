@@ -6,6 +6,7 @@ import logging
 import feedparser
 import distribute
 import settings
+from datetime import datetime
 from google.appengine.api import xmpp
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp.util import run_wsgi_app
@@ -60,9 +61,18 @@ class TestPage(webapp.RequestHandler):
   
   def get(self):
     couch = distribute.CouchClient()
+    t = datetime.now()
+    now = t.strftime("%Y-%m-%d %H:%M:%S")
     test_doc = {
-        'foo': 'bla',
-        'type': 'test'
+        'source': 'appengine-test',
+        'type': 'test',
+        'feed': {
+            'title': 'Testfeed',
+            'link': 'http://example.com',
+            'desc': 'a testfeed'
+        },
+        'link': 'http://example.com/test.html',
+        'title':'test %s' % now        
     }
     couch.save(test_doc)
     self.response.out.write('test')
@@ -78,13 +88,14 @@ class HubbubSubscriber(webapp.RequestHandler):
         self.response.set_status(404)
         self.response.out.write("Sorry, no feed.");       
     else:        
-        body = self.request.body.decode('utf-8')
+        body = self.request.body.decode('utf-8')        
         data = feedparser.parse(self.request.body)
+        logging.info(data.feed)
         logging.info('Found %d entries in %s', len(data.entries), subscription.feed)
-        feed_title = data.feed.title       
+        feed_title = data.feed.title 
         for entry in data.entries:
             logging.info(entry)
-            couch_client.save_feedparser_dict(entry)
+            couch_client.save_feedparser_dict(entry, data.feed)
             link = entry.get('link', '')
             title = entry.get('title', '')
             logging.info('Found entry with title = "%s", '
